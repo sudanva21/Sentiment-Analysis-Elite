@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentiment Analysis Elite</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&amp;display=swap"
+        rel="stylesheet">
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+</head>
+
+<body class="{{ result.bg_class if result else '' }}">
+    <nav class="glass-nav">
+        <div class="nav-content">
+            <span class="logo">Sentiment <span class="accent">AI</span></span>
+        </div>
+    </nav>
+
+    <div class="container fade-in">
+        <header>
+            <p class="tagline">NLP Powered Insight Engine</p>
+        </header>
+
+        <main>
+            <form action="/" method="POST" class="analysis-form shadow-premium">
+                <textarea name="text_input" id="main-input"
+                    placeholder="Paste your text here for deep emotional analysis..."
+                    required>{{ result.text if result else '' }}</textarea>
+                <div class="form-footer">
+                    <button type="submit" class="btn-primary">Analyze Emotion</button>
+                    <button type="button" class="btn-secondary" onclick="clearInput()">Clear</button>
+                </div>
+            </form>
+
+            {% if result %}
+            <div id="results-area" class="result-card fade-in shadow-premium">
+                <div class="card-header">
+                    <div class="emoji-display">{{ result.emoji }}</div>
+                    <button onclick="copyResults()" class="copy-btn" title="Copy Analysis">📋 Copy</button>
+                </div>
+
+                <h2>Analysis Intel</h2>
+                <div class="sentiment-badge {{ result.label_lower }}">
+                    {{ result.label }}
+                </div>
+
+                <div class="scores">
+                    <div class="score-item">
+                        <span class="score-label">Polarity</span>
+                        <span class="score-value">{{ result.polarity }}</span>
+                        <div class="score-bar">
+                            <div class="score-fill" data-width="{{ result.polarity_percent }}%"
+                                data-bg="var(--{{ result.label_lower }}-color)">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="score-item">
+                        <span class="score-label">Subjectivity</span>
+                        <span class="score-value">{{ result.subjectivity }}</span>
+                        <div class="score-bar">
+                            <div class="score-fill" data-width="{{ result.subjectivity_percent }}%"
+                                data-bg="var(--primary-color)">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {% if result.keywords %}
+                <div class="keywords-section">
+                    <h3><small>🧠</small> Key Concepts</h3>
+                    <div class="keywords-list">
+                        {% for keyword in result.keywords %}
+                        <span class="keyword-chip">{{ keyword }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if result.sentences %}
+                <div class="sentences-section">
+                    <h3><small>📝</small> granular Breakdown</h3>
+                    <ul class="sentences-list">
+                        {% for sent in result.sentences %}
+                        <li class="sentence-item {{ sent.label|lower }}">
+                            <span class="sentence-text">{{ sent.text }}</span>
+                            <span class="sentence-score">Score: {{ sent.polarity }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% if history %}
+            <div class="history-section fade-in">
+                <h3>Recents</h3>
+                <div class="history-grid">
+                    {% for item in history %}
+                    <div class="history-card">
+                        <span class="history-emoji">{{ item.emoji }}</span>
+                        <div class="history-info">
+                            <p class="history-text">{{ item.text_preview }}</p>
+                            <span class="history-sub">Label: {{ item.label }} | Pol: {{ item.polarity }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </main>
+    </div>
+
+    <script>
+        function clearInput() {
+            document.getElementById('main-input').value = '';
+        }
+
+        function copyResults() {
+            const resultText = `Sentiment: {{ result.label if result else '' }}\nPolarity: {{ result.polarity if result else '' }}\nSubjectivity: {{ result.subjectivity if result else '' }}`;
+            navigator.clipboard.writeText(resultText).then(() => {
+                const btn = document.querySelector('.copy-btn');
+                btn.innerText = '✅ Copied!';
+                setTimeout(() => btn.innerText = '📋 Copy', 2000);
+            });
+        }
+
+        // Apply dynamic styles from data attributes to bypass linter errors
+        document.addEventListener("DOMContentLoaded", function () {
+            const scoreFills = document.querySelectorAll('.score-fill');
+            scoreFills.forEach(fill => {
+                if (fill.dataset.width) fill.style.width = fill.dataset.width;
+                if (fill.dataset.bg) fill.style.backgroundColor = fill.dataset.bg;
+            });
+        });
+    </script>
+</body>
+
+</html>
