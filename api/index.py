@@ -5,7 +5,7 @@ import uuid
 import os
 import nltk
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='../templates', static_folder='../static')
 app.secret_key = 'super-secret-sentiment-key'
 
 # Serverless Configuration
