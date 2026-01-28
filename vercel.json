@@ -4,5 +4,8 @@
             "source": "/(.*)",
             "destination": "/api/index.py"
         }
-    ]
+    ],
+    "env": {
+        "ENABLE_PIP_INSTALL": "1"
+    }
 }
