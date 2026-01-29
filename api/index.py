@@ -3,9 +3,26 @@ from textblob import TextBlob
 import uuid
 import os
 import requests
+import nltk
 
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
 app.secret_key = 'super-secret-sentiment-key'
+
+# Serverless Configuration for NLTK
+# In Vercel, only /tmp is writable.
+nltk.data.path.append("/tmp/nltk_data")
+
+def ensure_nltk_resources():
+    try:
+        nltk.data.find('tokenizers/punkt')
+        nltk.data.find('corpora/brown')
+        nltk.data.find('corpora/noun_phrases')
+    except LookupError:
+        print("Downloading NLTK resources to /tmp/nltk_data...")
+        nltk.download('punkt', download_dir='/tmp/nltk_data', quiet=True)
+        nltk.download('brown', download_dir='/tmp/nltk_data', quiet=True)
+        nltk.download('noun_phrases', download_dir='/tmp/nltk_data', quiet=True)
+        nltk.download('punkt_tab', download_dir='/tmp/nltk_data', quiet=True)
 
 # HF API Configuration
 HF_API_URL = "https://api-inference.huggingface.co/models/distilbert-base-uncased-finetuned-sst-2-english"
@@ -27,6 +44,9 @@ def index():
     if request.method == 'POST':
         text = request.form.get('text_input')
         if text:
+            # Ensure resources are available before processing
+            ensure_nltk_resources()
+            
             # 1. High-Accuracy Transformer Analysis via API
             # Note: API returns a list of lists [[{'label': 'POSITIVE', 'score': 0.9}]]
             api_response = query_hf_api({"inputs": text[:512]})
