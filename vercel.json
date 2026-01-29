@@ -7,5 +7,6 @@
     ],
     "env": {
         "ENABLE_PIP_INSTALL": "1"
-    }
+    },
+    "installCommand": "pip install -r requirements.txt"
 }
