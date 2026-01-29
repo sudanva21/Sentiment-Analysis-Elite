@@ -1,42 +1,25 @@
 from flask import Flask, render_template, request, session
 from textblob import TextBlob
-from transformers import pipeline
 import uuid
 import os
-import nltk
+import requests
 
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
 app.secret_key = 'super-secret-sentiment-key'
 
-# Serverless Configuration
-# In Vercel/AWS Lambda, only /tmp is writable.
-os.environ['TRANSFORMERS_CACHE'] = '/tmp/transformers_cache'
-os.environ['HF_HOME'] = '/tmp/hf_home'
-nltk.data.path.append("/tmp/nltk_data")
+# HF API Configuration
+HF_API_URL = "https://api-inference.huggingface.co/models/distilbert-base-uncased-finetuned-sst-2-english"
+# Use environment variable if available, otherwise anonymous (might check rate limits)
+HF_API_TOKEN = os.environ.get("HF_API_TOKEN") 
+headers = {"Authorization": f"Bearer {HF_API_TOKEN}"} if HF_API_TOKEN else {}
 
-# Global variable for the model to allow lazy loading
-sentiment_analyzer = None
-
-def get_analyzer():
-    global sentiment_analyzer
-    if sentiment_analyzer is None:
-        print("Loading model...")
-        sentiment_analyzer = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
-    return sentiment_analyzer
-
-def ensure_nltk_resources():
+def query_hf_api(payload):
     try:
-        nltk.data.find('tokenizers/punkt')
-        nltk.data.find('corpora/brown')
-        nltk.data.find('corpora/noun_phrases')
-    except LookupError:
-        print("Downloading NLTK resources to /tmp/nltk_data...")
-        nltk.download('punkt', download_dir='/tmp/nltk_data', quiet=True)
-        nltk.download('brown', download_dir='/tmp/nltk_data', quiet=True)
-        nltk.download('noun_phrases', download_dir='/tmp/nltk_data', quiet=True)
-        # Verify textblob specific requirements
-        nltk.download('punkt_tab', download_dir='/tmp/nltk_data', quiet=True)
-
+        response = requests.post(HF_API_URL, headers=headers, json=payload)
+        return response.json()
+    except Exception as e:
+        print(f"API Error: {e}")
+        return None
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -44,16 +27,38 @@ def index():
     if request.method == 'POST':
         text = request.form.get('text_input')
         if text:
-            # Ensure resources are available before processing
-            ensure_nltk_resources()
-            analyzer = get_analyzer()
-
-            # 1. High-Accuracy Transformer Analysis
-            model_outputs = analyzer(text[:512]) # Model has a limit of 512 tokens
-            best_match = model_outputs[0]
-            label_model = best_match['label'] # 'POSITIVE' or 'NEGATIVE'
-            score_model = best_match['score'] # Confidence score 0-1
+            # 1. High-Accuracy Transformer Analysis via API
+            # Note: API returns a list of lists [[{'label': 'POSITIVE', 'score': 0.9}]]
+            api_response = query_hf_api({"inputs": text[:512]})
             
+            # Default fallback if API fails
+            label_model = 'NEUTRAL' 
+            score_model = 0.0
+
+            if api_response and isinstance(api_response, list) and len(api_response) > 0:
+                 # Standard response format check
+                 if isinstance(api_response[0], list):
+                     best_match = api_response[0][0] # Usually sorted by score
+                 elif isinstance(api_response[0], dict) and 'label' in api_response[0]:
+                     best_match = api_response[0]
+                 else:
+                     best_match = None
+                 
+                 if best_match:
+                    label_model = best_match.get('label', 'NEUTRAL')
+                    score_model = best_match.get('score', 0.0)
+            elif isinstance(api_response, dict) and 'error' in api_response:
+                print(f"HF API Error: {api_response['error']}")
+                # Fallback to TextBlob if API is loading or fails
+                blob_fallback = TextBlob(text)
+                pol_fallback = blob_fallback.sentiment.polarity
+                if pol_fallback > 0:
+                    label_model = 'POSITIVE'
+                    score_model = pol_fallback
+                else:
+                    label_model = 'NEGATIVE'
+                    score_model = abs(pol_fallback)
+
             # Map model results to our polarity system (-1 to 1)
             if label_model == 'POSITIVE':
                 polarity = round(score_model, 2)
@@ -82,7 +87,7 @@ def index():
                 bg_class = "bg-neutral"
 
             # Labels and Text Colors
-            if polarity > 0.1: # Small threshold for Transformer noise
+            if polarity > 0.1: # Small threshold
                 label = "Positive"
                 color_class = "text-green-600"
             elif polarity < -0.1:
@@ -92,37 +97,29 @@ def index():
                 label = "Neutral"
                 color_class = "text-gray-600"
 
-            # Keyword Extraction & Sentence Analysis (Hybrid Approach)
+            # Keyword Extraction
             try:
                 keywords = list(blob.noun_phrases)
             except Exception as e:
                 print(f"Error extracting noun phrases: {e}")
                 keywords = []
 
+            # Sentence Analysis - Simplified to TextBlob to save API calls per request
+            # (Calling API for every sentence would be too slow/rate-limited)
             sentences_data = []
             for sentence in blob.sentences:
-                # Use model for sentences too for consistency
                 s_text = str(sentence)
-                try:
-                    s_output = analyzer(s_text[:512])[0]
-                    s_polarity = round(s_output['score'] if s_output['label'] == 'POSITIVE' else -s_output['score'], 2)
-                except Exception as e:
-                    s_polarity = 0
-                
-                s_label = "Positive" if s_polarity > 0.1 else "Negative" if s_polarity < -0.1 else "Neutral"
+                s_pol = sentence.sentiment.polarity
+                s_label = "Positive" if s_pol > 0.1 else "Negative" if s_pol < -0.1 else "Neutral"
                 sentences_data.append({
                     'text': s_text,
-                    'polarity': s_polarity,
+                    'polarity': round(s_pol, 2),
                     'label': s_label
                 })
 
             polarity_percent = (polarity + 1) * 50
             subjectivity_percent = subjectivity * 100
             label_lower = label.lower()
-            
-            # Styles are now handled in the template
-            # polarity_style = f"width: {polarity_percent}%; background-color: var(--{label_lower}-color);"
-            # subjectivity_style = f"width: {subjectivity_percent}%; background-color: var(--primary-color);"
 
             sentiment_result = {
                 'text': text,
